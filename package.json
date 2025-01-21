@@ -2,14 +2,14 @@
   "name": "e-ticaret-sitesi",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "type": "module",
   "scripts": {
     "dev": "nodemon app.js",
-    "start": "pm2 start ecosystem.config.cjs --env production",
+    "start": "node app.js",
     "stop": "pm2 stop all",
     "restart": "pm2 restart all"
-  },
+}
   "keywords": [],
   "author": "",
   "license": "ISC",
