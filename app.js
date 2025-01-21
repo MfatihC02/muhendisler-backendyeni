@@ -58,6 +58,12 @@ const logger = winston.createLogger({
         new winston.transports.File({ filename: 'app.log' })
     ]
 });
+logger.info('Test Environment variables:', {
+    TEST_SECRET: process.env.TEST_SECRET ? 'Set' : 'Not Set',
+    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
+    TEST_VALUE: process.env.TEST_SECRET // Actual value
+});
+
 logger.info('Environment variables:', {
     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ? 'Set' : 'Not Set',
