@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+logs
+*.log
+app.log
+auth-middleware.log
+category-handlers.log
+events.log
+order-socket.log
+product-handlers.log
+rate-limit.log
+socket-*.log
+stock-socket.log
+
+# Development/Test files
+tests
+swagger
+README.md
+
+# Version control
+.git
+.gitignore
+
+# IDE specific files
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build files
+dist
+build
+
+# Docker specific
+Dockerfile
+.dockerignore
+
+# Cache
+.npm
+.cache
