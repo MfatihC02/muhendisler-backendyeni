@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "type": "module",
-    "scripts": {
-    "dev": "nodemon app.js",
-    "start": "pm2 start ecosystem.config.cjs --env production",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
     "stop": "pm2 stop all",
     "restart": "pm2 restart all"
   },
