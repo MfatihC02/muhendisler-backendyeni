@@ -60,6 +60,7 @@ const logger = winston.createLogger({
 });
 logger.info('Environment variables:', {
     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ? 'Set' : 'Not Set',
     MONGODB_URI: process.env.MONGODB_URI ? 'Set' : 'Not Set',
     PORT: process.env.PORT
 });
