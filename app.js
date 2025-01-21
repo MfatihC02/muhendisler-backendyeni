@@ -58,6 +58,11 @@ const logger = winston.createLogger({
         new winston.transports.File({ filename: 'app.log' })
     ]
 });
+logger.info('Environment variables:', {
+    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
+    MONGODB_URI: process.env.MONGODB_URI ? 'Set' : 'Not Set',
+    PORT: process.env.PORT
+});
 
 // Socket.IO'yu başlat
 initSocket(httpServer);
