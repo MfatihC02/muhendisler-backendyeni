@@ -1,6 +1,7 @@
 // models/stock.model.js
 import mongoose from 'mongoose';
 import StockReservation from './stockReservation.model.js';
+import { getIO } from '../socket/index.js';
 const { Schema } = mongoose;
 
 const StockSchema = new Schema({
@@ -126,12 +127,17 @@ StockSchema.virtual('isLowStock').get(function () {
 StockSchema.pre('save', async function (next) {
     // Stok düşük seviye kontrolü
     if (this.isLowStock) {
-        global.io.emit('lowStock', {
-            productId: this.product,
-            productType: this.productType,
-            quantity: this.availableQuantity,
-            threshold: this.lowStockThreshold
-        });
+        try {
+            const io = getIO();
+            io.emit('lowStock', {
+                productId: this.product,
+                productType: this.productType,
+                quantity: this.availableQuantity,
+                threshold: this.lowStockThreshold
+            });
+        } catch (error) {
+            console.error('Socket emission failed in pre-save:', error);
+        }
     }
     next();
 });
@@ -246,12 +252,17 @@ StockSchema.statics.getProductStock = async function (productId) {
 // Event listeners
 StockSchema.post('save', function (doc) {
     if (doc.isLowStock) {
-        global.io.emit('lowStock', {
-            stockId: doc._id,
-            productId: doc.product,
-            availableQuantity: doc.availableQuantity,
-            threshold: doc.lowStockThreshold
-        });
+        try {
+            const io = getIO();
+            io.emit('lowStock', {
+                stockId: doc._id,
+                productId: doc.product,
+                availableQuantity: doc.availableQuantity,
+                threshold: doc.lowStockThreshold
+            });
+        } catch (error) {
+            console.error('Socket emission failed in post-save:', error);
+        }
     }
 });
 
