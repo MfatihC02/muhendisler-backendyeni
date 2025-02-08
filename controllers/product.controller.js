@@ -186,7 +186,8 @@ export const getProducts = async (req, res) => {
         if (search) {
             query.$or = [
                 { name: { $regex: search, $options: 'i' } },
-                { brand: { $regex: search, $options: 'i' } }
+                { brand: { $regex: search, $options: 'i' } },
+                { 'description.keywords': { $regex: search, $options: 'i' } }
             ];
         }
 
@@ -294,7 +295,7 @@ export const getProductBySlug = async (req, res) => {
 export const updateProduct = async (req, res) => {
     try {
         console.log('Update başlangıcı - Gelen veri:', req.body);
-        
+
         const product = await Product.findById(req.params.id);
         if (!product) {
             return res.status(404).json({
@@ -306,10 +307,10 @@ export const updateProduct = async (req, res) => {
         // Price verisini parse et ve doğrula
         if (req.body.price) {
             try {
-                const price = typeof req.body.price === 'string' 
-                    ? JSON.parse(req.body.price) 
+                const price = typeof req.body.price === 'string'
+                    ? JSON.parse(req.body.price)
                     : req.body.price;
-                
+
                 req.body.price = {
                     current: parseFloat(price.current),
                     discount: parseFloat(price.discount || 0),
