@@ -49,6 +49,11 @@ const StockSchema = new Schema({
         required: true,
         validate: {
             validator: function (value) {
+                // Eğer quantity değişiyorsa validasyonu bypass et
+                if (this.isModified('quantity')) {
+                    return true;
+                }
+                // Sadece lowStockThreshold değiştiğinde kontrol et
                 return value <= this.quantity;
             },
             message: 'Düşük stok eşiği, toplam stok miktarından büyük olamaz'
@@ -143,33 +148,40 @@ StockSchema.pre('save', async function (next) {
 });
 
 // Methods
-StockSchema.methods.syncReservedQuantity = async function() {
-    const session = await mongoose.startSession();
+StockSchema.methods.syncReservedQuantity = async function(session) {
+    const currentSession = session || await mongoose.startSession();
     try {
-        session.startTransaction();
-        
-        const activeReservations = await StockReservation.find({
-            product: this.product,
-            status: { $in: ['CART', 'CHECKOUT', 'CONFIRMED'] }
-        }).session(session);
-        
-        this.reservedQuantity = activeReservations.reduce(
-            (total, res) => total + res.quantity, 
-            0
-        );
-        
-        await this.save({ session });
-        await session.commitTransaction();
-        
-        return this.reservedQuantity;
+      if (!session) currentSession.startTransaction();
+      
+      // 🔴 Sadece CART/CHECKOUT ve süresi dolmamış rezervasyonları say
+      const activeReservations = await StockReservation.find({
+        product: this.product,
+        status: { $in: ['CART', 'CHECKOUT'] }, // Filtreleme iyileştirildi
+        expiresAt: { $gt: new Date() }
+      }).session(currentSession);
+      
+      const totalReserved = activeReservations.reduce(
+        (total, res) => total + res.quantity, 
+        0
+      );
+      
+      // Atomik güncelleme
+      await Stock.findOneAndUpdate(
+        { _id: this._id },
+        { $set: { reservedQuantity: totalReserved } },
+        { session: currentSession, new: true }
+      );
+      
+      if (!session) await currentSession.commitTransaction();
+      return totalReserved;
     } catch (error) {
-        await session.abortTransaction();
-        throw error;
+      if (!session) await currentSession.abortTransaction();
+      throw error;
     } finally {
-        session.endSession();
+      if (!session) currentSession.endSession();
     }
-};
-
+  };
+  
 StockSchema.methods.getAvailableQuantity = async function () {
     // Önce senkronizasyon yap
     await this.syncReservedQuantity();
@@ -178,8 +190,13 @@ StockSchema.methods.getAvailableQuantity = async function () {
     return this.quantity - this.reservedQuantity;
 };
 
-StockSchema.methods.canReserve = async function (requestedQuantity) {
-    const availableQuantity = await this.getAvailableQuantity();
+StockSchema.methods.canReserve = async function (requestedQuantity, session) {
+    // Önce rezervasyon miktarını senkronize et
+    const reservedQuantity = await this.syncReservedQuantity(session);
+    
+    // Kullanılabilir stok = toplam stok - rezerve edilen
+    const availableQuantity = this.quantity - reservedQuantity;
+    
     return availableQuantity >= requestedQuantity;
 };
 
@@ -189,7 +206,7 @@ StockSchema.methods.createCartReservation = async function (quantity, userId) {
 
     try {
         // Stok kontrolü
-        if (!await this.canReserve(quantity)) {
+        if (!await this.canReserve(quantity, session)) {
             throw new Error('Yetersiz stok');
         }
 
@@ -223,7 +240,7 @@ StockSchema.methods.createCheckoutReservation = async function (quantity, userId
 
     try {
         // Stok kontrolü
-        if (!await this.canReserve(quantity)) {
+        if (!await this.canReserve(quantity, session)) {
             throw new Error('Yetersiz stok');
         }
 
