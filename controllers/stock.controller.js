@@ -265,84 +265,70 @@ class StockController {
 
     // Cart rezervasyonu oluştur
     static async createCartReservation(req, res) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
         try {
-            const { id } = req.params;
+            const { id: productId } = req.params;
             const { quantity } = req.body;
             const userId = req.user.id;
 
-            console.log('Cart rezervasyonu isteniyor:', { productId: id, quantity, userId });
+            console.log('Rezervasyon talebi başladı:', { productId, quantity, userId });
 
-            // Ürünü bul
-            const product = await Product.findById(id).session(session);
-            if (!product) {
-                console.error('Ürün bulunamadı:', id);
-                return res.status(404).json({
-                    success: false,
-                    message: 'Ürün bulunamadı'
-                });
-            }
-
-            // Stok kontrolü
-            const stock = await Stock.findOne({ product: id }).session(session);
+            // 1. Stok kontrolü - validate mantığı ile aynı
+            const stock = await Stock.findOne({ product: productId })
+                .populate('product', 'name');
+            
             if (!stock) {
-                console.error('Stok bulunamadı:', id);
+                console.log('Stok bulunamadı:', productId);
                 return res.status(404).json({
                     success: false,
-                    message: 'Stok bilgisi bulunamadı'
+                    message: 'Stok bulunamadı'
                 });
             }
 
-            // Aktif rezervasyonları kontrol et
-            const activeReservations = await StockReservation.find({
-                product: id,
-                status: { $in: ['CART', 'CHECKOUT'] },
-                expiresAt: { $gt: new Date() }
-            }).session(session);
+            // 2. Aktif rezervasyonları getir - validate mantığı ile aynı
+            const activeReservations = await StockReservation.findActiveReservations(productId);
+            
+            const reservedQuantity = activeReservations.reduce(
+                (total, res) => total + res.quantity, 
+                0
+            );
+            
+            const availableQuantity = stock.quantity - reservedQuantity;
+            
+            console.log('Stok durumu:', {
+                product: stock.product.name,
+                totalQuantity: stock.quantity,
+                reservedQuantity,
+                availableQuantity,
+                requested: quantity
+            });
 
-            // Mevcut rezerve edilmiş toplam miktar
-            const currentReservedQuantity = activeReservations.reduce((total, res) => total + res.quantity, 0);
-            
-            // Yeni rezervasyonla birlikte toplam rezerve miktarı
-            const newTotalReservedQuantity = currentReservedQuantity + quantity;
-            
-            // Kullanılabilir stok miktarı kontrolü
-            if (stock.quantity < newTotalReservedQuantity) {
-                console.error('Yetersiz stok:', { 
-                    available: stock.quantity - currentReservedQuantity, 
-                    requested: quantity 
+            if (availableQuantity < quantity) {
+                console.log('Yetersiz stok:', {
+                    product: stock.product.name,
+                    available: availableQuantity,
+                    requested: quantity
                 });
                 return res.status(400).json({
                     success: false,
                     message: 'Yeterli stok bulunmuyor',
-                    available: stock.quantity - currentReservedQuantity,
+                    available: availableQuantity,
                     requested: quantity
                 });
             }
 
-            // Rezervasyon oluştur
-            const reservation = new StockReservation({
-                product: id,
-                user: userId,
-                quantity,
-                status: 'CART',
-                expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 dakika
-            });
-
-            await reservation.save({ session });
-
-            // Stock modelinde reservedQuantity'yi güncelle
-            // Tüm aktif rezervasyonların toplamını kullan
-            await Stock.findOneAndUpdate(
-                { product: id },
-                { reservedQuantity: newTotalReservedQuantity },
-                { session }
+            // 3. Rezervasyon oluştur
+            const reservation = await StockReservation.createCartReservation(
+                productId,
+                userId,
+                quantity
             );
 
-            await session.commitTransaction();
-            console.log('Rezervasyon oluşturuldu:', reservation);
+            console.log('Rezervasyon başarılı:', {
+                product: stock.product.name,
+                reservationId: reservation._id,
+                quantity,
+                remainingStock: availableQuantity - quantity
+            });
 
             res.status(201).json({
                 success: true,
@@ -350,19 +336,18 @@ class StockController {
                 data: {
                     reservationId: reservation._id,
                     expiresAt: reservation.expiresAt,
-                    currentReservedQuantity: newTotalReservedQuantity
+                    quantity: reservation.quantity,
+                    available: availableQuantity - quantity
                 }
             });
+
         } catch (error) {
-            await session.abortTransaction();
-            console.error('Rezervasyon oluşturma hatası:', error);
+            console.error('Rezervasyon hatası:', error);
             res.status(500).json({
                 success: false,
-                message: 'Rezervasyon oluşturulurken bir hata oluştu',
+                message: 'Rezervasyon oluşturulamadı',
                 error: error.message
             });
-        } finally {
-            session.endSession();
         }
     }
 
@@ -483,43 +468,45 @@ class StockController {
     static async cancelReservation(req, res) {
         const session = await mongoose.startSession();
         session.startTransaction();
-
+      
         try {
-            const { reservationId } = req.params;
-
-            const reservation = await StockReservation.findOne({
-                _id: reservationId,
-                user: req.user._id,
-                status: { $in: ['CART', 'CHECKOUT'] }
-            }).session(session);
-
-            if (!reservation) {
-                await session.abortTransaction();
-                return res.status(404).json({
-                    success: false,
-                    message: 'Rezervasyon bulunamadı'
-                });
-            }
-
-            await reservation.cancel();
-            await session.commitTransaction();
-
-            res.json({
-                success: true,
-                data: reservation
-            });
-        } catch (error) {
+          const { reservationId } = req.params;
+      
+          const reservation = await StockReservation.findOne({
+            _id: reservationId,
+            user: req.user._id,
+            status: { $in: ['CART', 'CHECKOUT'] }
+          }).session(session);
+      
+          if (!reservation) {
             await session.abortTransaction();
-            console.error('Rezervasyon iptal hatası:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Rezervasyon iptal edilirken bir hata oluştu'
+            return res.status(404).json({
+              success: false,
+              message: 'Rezervasyon bulunamadı'
             });
+          }
+      
+          // 🔴 Artık cancel metodu reservedQuantity'yi azaltıyor
+          await reservation.cancel(session);
+      
+          await session.commitTransaction();
+      
+          res.json({
+            success: true,
+            data: reservation
+          });
+        } catch (error) {
+          await session.abortTransaction();
+          console.error('Rezervasyon iptal hatası:', error);
+          res.status(500).json({
+            success: false,
+            message: 'Rezervasyon iptal edilirken bir hata oluştu'
+          });
         } finally {
-            session.endSession();
+          session.endSession();
         }
-    }
-
+      }
+      
     // Stok rezervasyonunu güncelle
     static async updateReservation(req, res) {
         const session = await mongoose.startSession();
