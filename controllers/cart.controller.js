@@ -9,7 +9,7 @@ const Product = mongoose.model('Product');
 export const getCart = async (req, res) => {
     try {
         let cart = await Cart.findOne({ user: req.user._id })
-            .populate('items.product', 'name sku images price stock');
+            .populate('items.product', 'name sku images price stock productType');
 
         if (!cart) {
             cart = await Cart.create({ user: req.user._id, items: [] });
@@ -29,9 +29,13 @@ export const getCart = async (req, res) => {
 };
 
 export const addToCart = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
         const { error, value } = addToCartSchema.validate(req.body);
         if (error) {
+            await session.abortTransaction();
             return res.status(400).json({
                 success: false,
                 message: error.details[0].message
@@ -40,56 +44,32 @@ export const addToCart = async (req, res) => {
 
         const { productId, quantity } = value;
 
-        // 1. Stok ve ürün bilgisini al
-        const stock = await Stock.findOne({ product: productId }).populate('product', 'price stock unit');
+        // 1. Ürün ve stok kontrolü
+        const stock = await Stock.findOne({ product: productId })
+            .populate('product', 'name price stock unit')
+            .session(session);
+
         if (!stock) {
+            await session.abortTransaction();
             return res.status(404).json({
                 success: false,
-                message: 'Stok bulunamadı'
+                message: 'Ürün bulunamadı'
             });
         }
 
-        // 2. Aktif rezervasyonları kontrol et
-        const activeReservations = await StockReservation.find({
-            product: productId,
-            status: { $in: ['CART', 'CHECKOUT'] },
-            expiresAt: { $gt: new Date() }
-        });
-
-        const reservedQuantity = activeReservations.reduce((total, res) => total + res.quantity, 0);
-        const availableQuantity = stock.quantity - reservedQuantity;
-
-        if (availableQuantity < quantity) {
-            return res.status(400).json({
-                success: false,
-                message: 'Yetersiz stok'
-            });
-        }
-
-        let cart = await Cart.findOne({ user: req.user._id });
-
-        // Sepet yoksa oluştur
+        // 2. Sepet işlemleri
+        let cart = await Cart.findOne({ user: req.user._id }).session(session);
         if (!cart) {
             cart = new Cart({ user: req.user._id, items: [] });
         }
 
-        // Ürün sepette var mı kontrol
         const existingItemIndex = cart.items.findIndex(
             item => item.product.toString() === productId
         );
 
         if (existingItemIndex > -1) {
-            // Varsa miktarı güncelle
-            const newQuantity = cart.items[existingItemIndex].quantity + quantity;
-            if (availableQuantity < newQuantity) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Yetersiz stok'
-                });
-            }
-            cart.items[existingItemIndex].quantity = newQuantity;
+            cart.items[existingItemIndex].quantity = quantity;
         } else {
-            // Yoksa yeni item ekle
             cart.items.push({
                 product: productId,
                 quantity,
@@ -98,22 +78,34 @@ export const addToCart = async (req, res) => {
             });
         }
 
-        await cart.save();
+        await cart.save({ session });
+        await session.commitTransaction();
 
-        // Populate edilmiş cart'ı getir
-        cart = await Cart.findById(cart._id).populate('items.product', 'name sku images price stock');
+        // 3. Güncel sepeti getir
+        cart = await Cart.findById(cart._id)
+            .populate('items.product', 'name sku images price stock');
+
+        console.log('Ürün sepete eklendi:', {
+            product: stock.product.name,
+            quantity,
+            user: req.user._id
+        });
 
         res.status(200).json({
             success: true,
+            message: 'Ürün sepete eklendi',
             data: cart
         });
 
     } catch (error) {
-        console.error('Add to cart error:', error);
+        await session.abortTransaction();
+        console.error('Sepete ekleme hatası:', error);
         res.status(500).json({
             success: false,
             message: 'Ürün sepete eklenemedi'
         });
+    } finally {
+        session.endSession();
     }
 };
 
@@ -170,7 +162,7 @@ export const updateCartItem = async (req, res) => {
         const existingReservation = await StockReservation.findOne({
             product: productId,
             user: req.user._id,
-            status: 'CART'
+            status: { $in: ['CART', 'CHECKOUT'] }
         }).session(session);
 
         let currentReservedQuantity = 0;
@@ -246,63 +238,69 @@ export const updateCartItem = async (req, res) => {
 export const removeFromCart = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
-
+  
     try {
-        const { productId } = req.params;
-        const userId = req.user._id;
-
-        // 1. Bu ürün için aktif rezervasyonu bul
-        const reservation = await StockReservation.findOne({
-            product: productId,
-            user: userId,
-            status: 'CART'
-        }).session(session);
-
-        // 2. Eğer rezervasyon varsa iptal et
-        if (reservation) {
-            await reservation.cancel(session);
-        }
-
-        // 3. Ürünü cart'tan sil
-        let cart = await Cart.findOne({ user: userId }).session(session);
-        if (!cart) {
-            await session.abortTransaction();
-            return res.status(404).json({
-                success: false,
-                message: 'Sepet bulunamadı'
-            });
-        }
-
-        cart.items = cart.items.filter(
-            item => item.product.toString() !== productId
-        );
-
-        await cart.save({ session });
-
-        // 4. Transaction'ı tamamla
-        await session.commitTransaction();
-
-        // 5. Güncellenmiş sepeti getir
-        cart = await Cart.findById(cart._id)
-            .populate('items.product', 'name sku images price stock');
-
-        res.json({
-            success: true,
-            data: cart
-        });
-
-    } catch (error) {
+      const { productId } = req.params;
+      const userId = req.user._id;
+  
+      // 1. Tüm aktif rezervasyonları bul (CART ve CHECKOUT)
+      const reservations = await StockReservation.find({
+        product: productId,
+        user: userId,
+        status: { $in: ['CART', 'CHECKOUT'] }
+      }).session(session);
+  
+      // 2. Bulunan tüm rezervasyonları iptal et
+      for (const reservation of reservations) {
+        await reservation.cancel(session); // 
+      }
+  
+      // 3. Stock'u senkronize et
+      const stock = await Stock.findOne({ product: productId }).session(session);
+      if (stock) {
+        await stock.syncReservedQuantity(session); // 
+      }
+  
+      // 4. Ürünü cart'tan sil
+      let cart = await Cart.findOne({ user: userId }).session(session);
+      if (!cart) {
         await session.abortTransaction();
-        console.error('Remove from cart error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Ürün sepetten çıkarılamadı'
+        return res.status(404).json({
+          success: false,
+          message: 'Sepet bulunamadı'
         });
+      }
+  
+      cart.items = cart.items.filter(
+        item => item.product.toString() !== productId
+      );
+  
+      await cart.save({ session });
+  
+      // 5. Transaction'ı tamamla
+      await session.commitTransaction();
+  
+      // 6. Güncellenmiş sepeti getir
+      cart = await Cart.findById(cart._id)
+        .populate('items.product', 'name sku images price stock');
+  
+      res.json({
+        success: true,
+        data: cart
+      });
+  
+    } catch (error) {
+      await session.abortTransaction();
+      console.error('Remove from cart error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Ürün sepetten çıkarılamadı'
+      });
     } finally {
-        session.endSession();
+      session.endSession();
     }
-};
-
+  };
+  
 export const clearCart = async (req, res) => {
     try {
         const cart = await Cart.findOne({ user: req.user._id });
@@ -600,78 +598,86 @@ export const refreshCartReservations = async (req, res) => {
 
         for (const item of cart.items) {
             try {
-                const reservation = await StockReservation.findOne({
+                // Tüm aktif rezervasyonları kontrol et (CART veya CHECKOUT)
+                const existingReservation = await StockReservation.findOne({
                     product: item.product._id,
                     user: req.user._id,
-                    status: 'CART'
+                    status: { $in: ['CART', 'CHECKOUT'] }
                 }).session(session);
 
-                if (!reservation) {
-                    // Stok kontrolü
-                    const stock = await Stock.findOne({ 
-                        product: item.product._id 
-                    }).session(session);
+                // Stok kontrolü için stock'u populate et
+                const stock = await Stock.findOne({ product: item.product._id })
+                    .populate('product', 'name')
+                    .session(session);
 
-                    const isAvailable = await stock.canReserve(item.quantity);
-                    if (!isAvailable) {
-                        refreshResults.push({
-                            productId: item.product._id,
-                            success: false,
-                            message: 'Yeterli stok bulunmuyor'
+                if (!stock) {
+                    refreshResults.push({
+                        productId: item.product._id,
+                        success: false,
+                        message: 'Ürün stokta bulunamadı'
+                    });
+                    continue;
+                }
+
+                if (existingReservation) {
+                    // Rezervasyon varsa güncelle
+                    if (existingReservation.isExpired) {
+                        // Süresi dolmuşsa yenile
+                        await existingReservation.extend(60 * 60 * 1000); // 1 saat
+                        console.log('Rezervasyon yenilendi:', {
+                            product: stock.product.name,
+                            reservationId: existingReservation._id
                         });
-                        continue;
                     }
 
+                    // Miktarı güncelle (değiştiyse)
+                    if (existingReservation.quantity !== item.quantity) {
+                        existingReservation.quantity = item.quantity;
+                        await existingReservation.save({ session });
+                        console.log('Rezervasyon miktarı güncellendi:', {
+                            product: stock.product.name,
+                            oldQuantity: existingReservation.quantity,
+                            newQuantity: item.quantity
+                        });
+                    }
+
+                    refreshResults.push({
+                        productId: item.product._id,
+                        success: true,
+                        reservationId: existingReservation._id,
+                        message: 'Rezervasyon güncellendi'
+                    });
+                } else {
                     // Yeni rezervasyon oluştur
                     const newReservation = await StockReservation.createCartReservation(
                         item.product._id,
                         req.user._id,
-                        item.quantity
+                        item.quantity,
+                        session
                     );
 
-                    refreshResults.push({
-                        productId: item.product._id,
-                        success: true,
-                        reservationId: newReservation._id
+                    console.log('Yeni rezervasyon oluşturuldu:', {
+                        product: stock.product.name,
+                        reservationId: newReservation._id,
+                        quantity: item.quantity
                     });
-                } else if (reservation.isExpired) {
-                    // Stok kontrolü
-                    const stock = await Stock.findOne({ 
-                        product: item.product._id 
-                    }).session(session);
-
-                    const isAvailable = await stock.canReserve(item.quantity);
-                    if (!isAvailable) {
-                        refreshResults.push({
-                            productId: item.product._id,
-                            success: false,
-                            message: 'Yeterli stok bulunmuyor'
-                        });
-                        continue;
-                    }
-
-                    // Rezervasyonu yenile
-                    await reservation.extend(60 * 60 * 1000); // 1 saat
 
                     refreshResults.push({
                         productId: item.product._id,
                         success: true,
-                        reservationId: reservation._id
-                    });
-                } else {
-                    // Rezervasyon hala geçerli
-                    refreshResults.push({
-                        productId: item.product._id,
-                        success: true,
-                        reservationId: reservation._id,
-                        message: 'Rezervasyon hala geçerli'
+                        reservationId: newReservation._id,
+                        message: 'Yeni rezervasyon oluşturuldu'
                     });
                 }
             } catch (error) {
+                console.error('Ürün rezervasyon hatası:', {
+                    productId: item.product._id,
+                    error: error.message
+                });
                 refreshResults.push({
                     productId: item.product._id,
                     success: false,
-                    message: error.message
+                    message: 'Rezervasyon işlemi başarısız: ' + error.message
                 });
             }
         }
