@@ -9,6 +9,7 @@ import { initSocket } from './socket/index.js';
 import performanceMetrics from './middlewares/performanceMetrics.middleware.js';
 import { monitorMiddleware } from './middleware/performance/cache.js';
 import { initializeIndexes } from './config/database/indexes/index.init.js';
+import cron from 'node-cron';
 
 // Model tanımlamalarını import et
 import './models/product.model.js';
@@ -58,18 +59,6 @@ const logger = winston.createLogger({
         new winston.transports.File({ filename: 'app.log' })
     ]
 });
-logger.info('Test Environment variables:', {
-    TEST_SECRET: process.env.TEST_SECRET ? 'Set' : 'Not Set',
-    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
-    TEST_VALUE: process.env.TEST_SECRET // Actual value
-});
-
-logger.info('Environment variables:', {
-    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET ? 'Set' : 'Not Set',
-    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ? 'Set' : 'Not Set',
-    MONGODB_URI: process.env.MONGODB_URI ? 'Set' : 'Not Set',
-    PORT: process.env.PORT
-});
 
 // Socket.IO'yu başlat
 initSocket(httpServer);
@@ -82,38 +71,20 @@ app.use(cookieParser());
 // Performance middleware
 app.use(monitorMiddleware);
 
-// CORS ve Cookie yapılandırması
-const allowedOrigins = [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    "https://muhendisler-frontend.vercel.app"
-];
-
-const corsOptions = {
-    origin: function(origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('CORS policy violation'));
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control'],
-    exposedHeaders: ['set-cookie'],
-    maxAge: 86400
-};
-
-app.use(cors(corsOptions));
-
-// Cookie güvenlik ayarları
+// Genel CORS yapılandırması - callback rotaları hariç
 app.use((req, res, next) => {
-    res.cookie('options', {
-        httpOnly: true,
-        secure: true, // HTTPS zorunlu
-        sameSite: 'none', // Cross-domain için gerekli
-        maxAge: 24 * 60 * 60 * 1000 // 24 saat
-    });
-    next();
+    // Eğer callback rotası ise, CORS kontrolünü atla
+    if (req.path.startsWith('/api/payments/callback/')) {
+        return next();
+    }
+    
+    // Diğer rotalar için normal CORS uygula
+    cors({
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
+    })(req, res, next);
 });
 
 // Request logging middleware
@@ -192,71 +163,57 @@ app.use((err, req, res, next) => {
 });
 
 // Graceful shutdown handler
-const gracefulShutdown = async () => {
-    try {
-        logger.info('Uygulama kapatılıyor...');
-        await mongoose.connection.close();
+const gracefulShutdown = () => {
+    logger.info('Uygulama kapatılıyor...');
+    
+    // MongoDB bağlantısını kapat
+    mongoose.connection.close(false, () => {
         logger.info('MongoDB bağlantısı kapatıldı');
         process.exit(0);
-    } catch (error) {
-        logger.error('Kapatma işlemi sırasında hata:', error);
+    });
+
+    // 10 saniye içinde kapanmazsa zorla kapat
+    setTimeout(() => {
+        logger.error('Zorla kapatılıyor');
         process.exit(1);
-    }
+    }, 10000);
 };
 
 // Shutdown sinyallerini dinle
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// MongoDB bağlantısı yönetimi
-let mongoConnection = null;
+// DB Connection
+mongoose.connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+})
+.then(async () => {
+    logger.info('MongoDB bağlantısı başarılı');
+    
+    // Index yönetimi
+    await initializeIndexes();
+    logger.info('Database indexes initialized');
 
-const connectDB = async () => {
-    try {
-        if (mongoConnection) {
-            logger.info('MongoDB bağlantısı zaten mevcut');
-            return;
-        }
+    // Sunucuyu aktif tutmak için cron job
+    cron.schedule('*/14 * * * *', () => {
+        logger.info('Cron job çalıştı: Sunucu aktif tutuluyor');
+        // Basit bir işlem yaparak sunucuyu aktif tut
+        mongoose.connection.db.admin().ping();
+    });
+})
+.catch(err => {
+    logger.error('MongoDB bağlantı hatası:', err);
+    process.exit(1);
+});
 
-        mongoConnection = await mongoose.connect(process.env.MONGODB_URI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-            serverSelectionTimeoutMS: 5000,
-            socketTimeoutMS: 45000,
-        });
+// Mongoose bağlantı olaylarını dinle
+mongoose.connection.on('error', err => {
+    logger.error('MongoDB bağlantı hatası:', err);
+});
 
-        logger.info('MongoDB bağlantısı başarılı');
-        
-        // Index yönetimi
-        await initializeIndexes();
-        logger.info('Database indexes initialized');
-
-        mongoose.connection.on('error', (err) => {
-            logger.error('MongoDB bağlantı hatası:', err);
-        });
-
-        mongoose.connection.on('disconnected', () => {
-            logger.info('MongoDB bağlantısı kesildi');
-            mongoConnection = null;
-        });
-
-    } catch (err) {
-        logger.error('MongoDB bağlantı hatası:', err);
-        mongoConnection = null;
-        // Vercel ortamında hemen çıkış yapmak yerine tekrar bağlanmayı dene
-        setTimeout(connectDB, 5000);
-    }
-};
-
-// İlk bağlantıyı yap
-connectDB();
-
-// Her istek için bağlantı kontrolü
-app.use(async (req, res, next) => {
-    if (!mongoose.connection.readyState) {
-        await connectDB();
-    }
-    next();
+mongoose.connection.on('disconnected', () => {
+    logger.warn('MongoDB bağlantısı koptu');
 });
 
 // HTTP sunucusunu başlat
