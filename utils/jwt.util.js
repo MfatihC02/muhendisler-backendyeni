@@ -36,24 +36,46 @@ export const createTokens = async (user) => {
 };
 
 export const setTokenCookies = (res, { accessToken, refreshToken }) => {
+    const allowedOrigins = [
+        'https://muhendisler-frontend.vercel.app',
+        'https://xn--tarmmarket-zub.com.tr'
+    ];
+
+    const origin = res.req.headers.origin;
+    if (!allowedOrigins.includes(origin)) {
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Unauthorized origin' 
+        });
+    }
+
     res.cookie('access_token', accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: true,
         sameSite: 'none',
-        maxAge: 15 * 60 * 1000
+        maxAge: 15 * 60 * 1000,
+        domain: '.onrender.com'
     });
 
     res.cookie('refresh_token', refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: true,
         sameSite: 'none',
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        domain: '.onrender.com'
     });
 };
 
 export const clearTokenCookies = (res) => {
-    res.cookie('access_token', '', { maxAge: 0 });
-    res.cookie('refresh_token', '', { maxAge: 0 });
+    const cookieOptions = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        domain: '.onrender.com'
+    };
+
+    res.cookie('access_token', '', { ...cookieOptions, maxAge: 0 });
+    res.cookie('refresh_token', '', { ...cookieOptions, maxAge: 0 });
 };
 
 // Yeni eklenen token kontrol fonksiyonları
