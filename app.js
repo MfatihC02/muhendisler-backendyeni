@@ -78,14 +78,29 @@ app.use((req, res, next) => {
         return next();
     }
     
+    // İzin verilen originler
+    const allowedOrigins = [
+        process.env.FRONTEND_URL || "http://localhost:5173",
+        "https://xn--tarmmarket-zub.com.tr",
+        "https://muhendisler-frontend.vercel.app"
+    ];
+    
     // Diğer rotalar için normal CORS uygula
     cors({
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: function(origin, callback) {
+            // origin undefined olabilir (örn: Postman istekleri)
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error('CORS policy violation'));
+            }
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
     })(req, res, next);
 });
+
 
 // Request logging middleware
 app.use((req, res, next) => {
