@@ -78,7 +78,7 @@ app.use((req, res, next) => {
         return next();
     }
     
-    // İzin verilen originler
+// İzin verilen originler
     const allowedOrigins = [
         process.env.FRONTEND_URL || "http://localhost:5173",
         "https://xn--tarmmarket-zub.com.tr",
