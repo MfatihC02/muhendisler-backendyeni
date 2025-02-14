@@ -71,35 +71,42 @@ app.use(cookieParser());
 // Performance middleware
 app.use(monitorMiddleware);
 
-// Genel CORS yapılandırması - callback rotaları hariç
-app.use((req, res, next) => {
-    // Eğer callback rotası ise, CORS kontrolünü atla
-    if (req.path.startsWith('/api/payments/callback/')) {
-        return next();
-    }
-    
-// İzin verilen originler
-    const allowedOrigins = [
-        process.env.FRONTEND_URL || "http://localhost:5173",
-        "https://xn--tarmmarket-zub.com.tr",
-        "https://muhendisler-frontend.vercel.app"
-    ];
-    
-    // Diğer rotalar için normal CORS uygula
-    cors({
-        origin: function(origin, callback) {
-            // origin undefined olabilir (örn: Postman istekleri)
-            if (!origin || allowedOrigins.includes(origin)) {
-                callback(null, true);
-            } else {
-                callback(new Error('CORS policy violation'));
-            }
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
-    })(req, res, next);
+const allowedOrigins = [
+    process.env.FRONTEND_URL || "http://localhost:5173",
+    "https://xn--tarmmarket-zub.com.tr",
+    "https://muhendisler-frontend.vercel.app"
+];
+
+// Ana CORS yapılandırması
+app.use(cors({
+    origin: function (origin, callback) {
+        console.log('Gelen Origin:', origin);
+        console.log('İzin Verilen Originler:', allowedOrigins);
+
+        if (!origin || allowedOrigins.includes(origin)) {
+            console.log('Origin kabul edildi:', origin);
+            callback(null, true);
+        } else {
+            console.log('Origin reddedildi:', origin);
+            callback(new Error('CORS policy violation'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
+}));
+
+// Özel rotalar için CORS yapılandırması
+app.use('/api/payments/callback/', (req, res, next) => {
+    console.log('Payment Callback isteği alındı');
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    next();
 });
+
+// Pre-flight istekleri için
+app.options('*', cors());
 
 
 // Request logging middleware
