@@ -72,43 +72,100 @@ app.use(cookieParser());
 app.use(monitorMiddleware);
 
 const allowedOrigins = [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    "https://xn--tarmmarket-zub.com.tr",
-    "https://muhendisler-frontend.vercel.app"
+   process.env.FRONTEND_URL || "http://localhost:5173",
+   "https://xn--tarmmarket-zub.com.tr",
+   "https://muhendisler-frontend.vercel.app"
 ];
+
+// Request detaylarını logla
+app.use((req, res, next) => {
+   console.log('----------------------');
+   console.log('📍 Request Detayları:', {
+       url: req.url,
+       method: req.method,
+       origin: req.headers.origin,
+       host: req.headers.host,
+       referer: req.headers.referer,
+       'x-forwarded-host': req.headers['x-forwarded-host'],
+       'x-forwarded-proto': req.headers['x-forwarded-proto']
+   });
+   next();
+});
+
+// Express güven ayarları
+app.set('trust proxy', 1);
 
 // Ana CORS yapılandırması
 app.use(cors({
-    origin: function (origin, callback) {
-        console.log('Gelen Origin:', origin);
-        console.log('İzin Verilen Originler:', allowedOrigins);
+   origin: function (origin, callback) {
+       console.log('🔍 CORS Origin Kontrolü:');
+       console.log('Gelen Origin:', origin);
+       console.log('İzin Verilen Originler:', allowedOrigins);
+       
+       // Origin header kontrolü
+       const forwardedOrigin = req.headers['x-forwarded-host'] || req.headers['x-forwarded-origin'];
+       console.log('Forwarded Origin:', forwardedOrigin);
+       
+       const effectiveOrigin = origin || forwardedOrigin;
+       console.log('Effective Origin:', effectiveOrigin);
 
-        if (!origin || allowedOrigins.includes(origin)) {
-            console.log('Origin kabul edildi:', origin);
-            callback(null, true);
-        } else {
-            console.log('Origin reddedildi:', origin);
-            callback(new Error('CORS policy violation'));
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
+       if (!effectiveOrigin) {
+           console.log('⚠️ Origin undefined - izin veriliyor');
+           callback(null, true);
+           return;
+       }
+
+       if (allowedOrigins.includes(effectiveOrigin)) {
+           console.log('✅ Origin kabul edildi:', effectiveOrigin);
+           callback(null, true);
+       } else {
+           console.log('❌ Origin reddedildi:', effectiveOrigin);
+           callback(new Error('CORS policy violation'));
+       }
+   },
+   credentials: true,
+   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
 }));
 
 // Özel rotalar için CORS yapılandırması
 app.use('/api/payments/callback/', (req, res, next) => {
-    console.log('Payment Callback isteği alındı');
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    next();
+   console.log('💳 Payment Callback isteği alındı');
+   res.header('Access-Control-Allow-Origin', '*');
+   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+   res.header('Access-Control-Allow-Headers', 'Content-Type');
+   next();
 });
 
 // Pre-flight istekleri için
-app.options('*', cors());
+app.options('*', (req, res, next) => {
+   console.log('🛫 Pre-flight isteği alındı');
+   cors()(req, res, next);
+});
 
+// Hata yakalama
+app.use((err, req, res, next) => {
+   console.log('❌ Hata:', err.message);
+   if (err.message === 'CORS policy violation') {
+       res.status(403).json({
+           error: 'CORS policy violation',
+           origin: req.headers.origin,
+           allowedOrigins: allowedOrigins
+       });
+   } else {
+       next(err);
+   }
+});
 
+// Response headers'ı logla
+app.use((req, res, next) => {
+   const oldSend = res.send;
+   res.send = function () {
+       console.log('📨 Response Headers:', res.getHeaders());
+       return oldSend.apply(res, arguments);
+   };
+   next();
+});
 // Request logging middleware
 app.use((req, res, next) => {
     logger.info(`${req.method} ${req.url}`, {
