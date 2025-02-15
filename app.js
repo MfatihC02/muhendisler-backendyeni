@@ -63,47 +63,62 @@ const logger = winston.createLogger({
 // Socket.IO'yu başlat
 initSocket(httpServer);
 
-// Middleware
+// Debug middleware
+app.use((req, res, next) => {
+    logger.info('Gelen İstek:', {
+        method: req.method,
+        path: req.path,
+        origin: req.headers.origin,
+        headers: req.headers
+    });
+    next();
+});
+
+// CORS yapılandırması
+const allowedDomains = [
+    'https://muhendisler-frontend.vercel.app',
+    'https://xn--tarmmarket-zub.com.tr',
+    'https://tarımmarket.com.tr'
+];
+
+const corsOptions = {
+    origin: function(origin, callback) {
+        try {
+            // Development ortamında veya test araçlarından gelen istekler için
+            if (!origin) {
+                return callback(null, true);
+            }
+
+            // Origin'i normalize et
+            const normalizedOrigin = origin.toLowerCase().trim();
+            
+            if (allowedDomains.includes(normalizedOrigin)) {
+                callback(null, true);
+            } else {
+                logger.warn('Reddedilen origin:', normalizedOrigin);
+                callback(new Error('CORS policy violation'));
+            }
+        } catch (error) {
+            logger.error('CORS kontrol hatası:', error);
+            callback(null, false);
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control'],
+    exposedHeaders: ['set-cookie']
+};
+
+// CORS middleware'ini ilk sıraya al
+app.use(cors(corsOptions));
+
+// Temel middleware'ler
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Performance middleware
 app.use(monitorMiddleware);
-
-// En başa ekleyin (diğer middleware'lerden önce)
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'https://xn--tarmmarket-zub.com.tr');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
-
-    // Preflight istekleri için
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-
-    next();
-});
-
-// CORS middleware'ini güncelle
-app.use(cors({
-    origin: 'https://xn--tarmmarket-zub.com.tr',
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
-}));
-
-// CORS middleware'inden önce
-app.use((req, res, next) => {
-    console.log('İstek geldi:', {
-        method: req.method,
-        url: req.url,
-        origin: req.headers.origin,
-        headers: req.headers
-    });
-    next();
-});
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -154,7 +169,8 @@ app.use((err, req, res, next) => {
         error: err.message,
         stack: err.stack,
         path: req.path,
-        method: req.method
+        method: req.method,
+        origin: req.headers.origin
     });
 
     // Mongoose validation hatası kontrolü
@@ -171,6 +187,14 @@ app.use((err, req, res, next) => {
         return res.status(401).json({
             success: false,
             message: 'Geçersiz veya süresi dolmuş token'
+        });
+    }
+
+    // CORS hatası kontrolü
+    if (err.message === 'CORS policy violation') {
+        return res.status(403).json({
+            success: false,
+            message: 'CORS policy violation'
         });
     }
 
