@@ -71,26 +71,9 @@ app.use(cookieParser());
 // Performance middleware
 app.use(monitorMiddleware);
 
-const allowedOrigins = [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    "https://xn--tarmmarket-zub.com.tr",
-    "https://muhendisler-frontend.vercel.app"
-];
-
 // Ana CORS yapılandırması
 app.use(cors({
-    origin: function (origin, callback) {
-        console.log('Gelen Origin:', origin);
-        console.log('İzin Verilen Originler:', allowedOrigins);
-
-        if (!origin || allowedOrigins.includes(origin)) {
-            console.log('Origin kabul edildi:', origin);
-            callback(null, true);
-        } else {
-            console.log('Origin reddedildi:', origin);
-            callback(new Error('CORS policy violation'));
-        }
-    },
+    origin: '*',  // Tüm originlere izin ver
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
