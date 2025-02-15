@@ -71,41 +71,39 @@ app.use(cookieParser());
 // Performance middleware
 app.use(monitorMiddleware);
 
-// Allowed origins listesi
-const allowedOrigins = [
-    'https://xn--tarmmarket-zub.com.tr',
-    'https://muhendisler-frontend.vercel.app',
-    'http://localhost:5173',
-    process.env.FRONTEND_URL
-].filter(Boolean); // null/undefined değerleri filtrele
+// En başa ekleyin (diğer middleware'lerden önce)
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', 'https://xn--tarmmarket-zub.com.tr');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
 
-// Ana CORS yapılandırması
+    // Preflight istekleri için
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
+    next();
+});
+
+// CORS middleware'ini güncelle
 app.use(cors({
-    origin: function (origin, callback) {
-        // origin olmadığında (örn: Postman istekleri) izin ver
-        if (!origin) {
-            return callback(null, true);
-        }
-
-        if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            console.log('Reddedilen origin:', origin);
-            callback(null, true); // Geçici olarak tüm originlere izin ver
-        }
-    },
+    origin: 'https://xn--tarmmarket-zub.com.tr',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
 }));
 
-// Pre-flight istekleri için
-app.options('*', cors({
-    origin: function (origin, callback) {
-        callback(null, true);
-    },
-    credentials: true
-}));
+// CORS middleware'inden önce
+app.use((req, res, next) => {
+    console.log('İstek geldi:', {
+        method: req.method,
+        url: req.url,
+        origin: req.headers.origin,
+        headers: req.headers
+    });
+    next();
+});
 
 // Request logging middleware
 app.use((req, res, next) => {
