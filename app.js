@@ -69,10 +69,22 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // CORS yapılandırması
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', 'https://xn--tarmmarket-zub.com.tr');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    next();
+});
+
 app.use(cors({
-    origin: '*',  // Tüm originlere izin ver
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    origin: 'https://xn--tarmmarket-zub.com.tr',
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', DELETE, 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
 }));
 
