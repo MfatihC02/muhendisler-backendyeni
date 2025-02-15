@@ -32,7 +32,7 @@ export const getIO = () => {
     return io;
 };
 
-export const initSocket = (httpServer) => {
+export const initSocket = (server) => {
     if (io) {
         logger.warn('Socket.IO server already initialized');
         return io;
@@ -44,11 +44,10 @@ export const initSocket = (httpServer) => {
 
     logger.info('Initializing Socket.IO server');
 
-    io = new Server(httpServer, {
+    io = new Server(server, {
         cors: {
-            origin: process.env.FRONTEND_URL || "http://localhost:5173",
-            methods: ["GET", "POST"],
-            allowedHeaders: ["Cookie", "Set-Cookie", "content-type", "Authorization"],
+            origin: 'https://xn--tarmmarket-zub.com.tr',
+            methods: ['GET', 'POST'],
             credentials: true
         },
         pingTimeout: 60000,
@@ -62,7 +61,7 @@ export const initSocket = (httpServer) => {
         cookie: {
             name: "io",
             httpOnly: true,
-            sameSite: "none"
+            sameSite: "lax"
         }
     });
 
@@ -101,16 +100,16 @@ export const initSocket = (httpServer) => {
                     timestamp: new Date(),
                     error: error.message
                 };
-                
+
                 const errorCount = connectionStats.errors.get(error.message) || 0;
                 connectionStats.errors.set(error.message, errorCount + 1);
             });
 
             socket.on('disconnect', (reason) => {
                 connectionStats.activeConnections--;
-                logger.info('Client disconnected', { 
-                    reason, 
-                    remainingConnections: connectionStats.activeConnections 
+                logger.info('Client disconnected', {
+                    reason,
+                    remainingConnections: connectionStats.activeConnections
                 });
             });
 
