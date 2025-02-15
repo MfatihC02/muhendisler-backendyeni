@@ -78,6 +78,8 @@ app.use((req, res, next) => {
 const allowedDomains = [
     'https://muhendisler-frontend.vercel.app',
     'https://xn--tarmmarket-zub.com.tr',
+    'https://xn--tarmmarket-zub.com.tr/',
+    'https://tarımmarket.com.tr/',
     'https://tarımmarket.com.tr'
 ];
 
