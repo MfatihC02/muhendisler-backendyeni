@@ -71,26 +71,41 @@ app.use(cookieParser());
 // Performance middleware
 app.use(monitorMiddleware);
 
+// Allowed origins listesi
+const allowedOrigins = [
+    'https://xn--tarmmarket-zub.com.tr',
+    'https://muhendisler-frontend.vercel.app',
+    'http://localhost:5173',
+    process.env.FRONTEND_URL
+].filter(Boolean); // null/undefined değerleri filtrele
+
 // Ana CORS yapılandırması
 app.use(cors({
-    origin: '*',  // Tüm originlere izin ver
+    origin: function (origin, callback) {
+        // origin olmadığında (örn: Postman istekleri) izin ver
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log('Reddedilen origin:', origin);
+            callback(null, true); // Geçici olarak tüm originlere izin ver
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control']
 }));
 
-// Özel rotalar için CORS yapılandırması
-app.use('/api/payments/callback/', (req, res, next) => {
-    console.log('Payment Callback isteği alındı');
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    next();
-});
-
 // Pre-flight istekleri için
-app.options('*', cors());
-
+app.options('*', cors({
+    origin: function (origin, callback) {
+        callback(null, true);
+    },
+    credentials: true
+}));
 
 // Request logging middleware
 app.use((req, res, next) => {
