@@ -163,8 +163,19 @@ app.use((req, res, next) => {
     });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
+    // Detaylı hata logu
+    console.log('\n=== HATA DETAYI ===');
+    console.log('Zaman:', new Date().toISOString());
+    console.log('URL:', req.originalUrl);
+    console.log('Metod:', req.method);
+    console.log('Origin:', req.headers.origin);
+    console.log('User Agent:', req.headers['user-agent']);
+    console.log('Cookies:', req.cookies);
+    console.log('Hata Mesajı:', err.message);
+    console.log('Hata Stack:', err.stack);
+    console.log('==================\n');
+
     logger.error('Uygulama hatası:', {
         error: err.message,
         stack: err.stack,
@@ -172,6 +183,7 @@ app.use((err, req, res, next) => {
         method: req.method,
         origin: req.headers.origin
     });
+
 
     // Mongoose validation hatası kontrolü
     if (err.name === 'ValidationError') {
