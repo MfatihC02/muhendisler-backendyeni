@@ -36,17 +36,17 @@ export const createTokens = async (user) => {
 };
 
 export const setTokenCookies = (res, { accessToken, refreshToken }) => {
-    res.cookie('access_token', accessToken, {
+    const cookieOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
-        maxAge: 15 * 60 * 1000
-    });
+        secure: true, // HTTPS gerekli
+        sameSite: 'none', // Cross-site isteklere izin ver
+        maxAge: 15 * 60 * 1000,
+        path: '/' // Tüm path'lerde geçerli olsun
+    };
 
+    res.cookie('access_token', accessToken, cookieOptions);
     res.cookie('refresh_token', refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'none',
+        ...cookieOptions,
         maxAge: 7 * 24 * 60 * 60 * 1000
     });
 };
