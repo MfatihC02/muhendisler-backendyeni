@@ -63,58 +63,7 @@ const logger = winston.createLogger({
 // Socket.IO'yu başlat
 initSocket(httpServer);
 
-// Debug middleware
-app.use((req, res, next) => {
-    logger.info('Gelen İstek:', {
-        method: req.method,
-        path: req.path,
-        origin: req.headers.origin,
-        headers: req.headers
-    });
-    next();
-});
-
-// CORS yapılandırması
-const allowedDomains = [
-    'https://muhendisler-frontend.vercel.app',
-    'https://xn--tarmmarket-zub.com.tr',
-    'https://xn--tarmmarket-zub.com.tr/',
-    'https://tarımmarket.com.tr/',
-    'https://tarımmarket.com.tr'
-];
-
-const corsOptions = {
-    origin: function(origin, callback) {
-        try {
-            // Development ortamında veya test araçlarından gelen istekler için
-            if (!origin) {
-                return callback(null, true);
-            }
-
-            // Origin'i normalize et
-            const normalizedOrigin = origin.toLowerCase().trim();
-            
-            if (allowedDomains.includes(normalizedOrigin)) {
-                callback(null, true);
-            } else {
-                logger.warn('Reddedilen origin:', normalizedOrigin);
-                callback(new Error('CORS policy violation'));
-            }
-        } catch (error) {
-            logger.error('CORS kontrol hatası:', error);
-            callback(null, false);
-        }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'cache-control'],
-    exposedHeaders: ['set-cookie']
-};
-
-// CORS middleware'ini ilk sıraya al
-app.use(cors(corsOptions));
-
-// Temel middleware'ler
+// Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
@@ -165,6 +114,7 @@ app.use((req, res, next) => {
     });
 });
 
+// Error handler
 app.use((err, req, res, next) => {
     // Detaylı hata logu
     console.log('\n=== HATA DETAYI ===');
@@ -186,7 +136,6 @@ app.use((err, req, res, next) => {
         origin: req.headers.origin
     });
 
-
     // Mongoose validation hatası kontrolü
     if (err.name === 'ValidationError') {
         return res.status(400).json({
@@ -201,14 +150,6 @@ app.use((err, req, res, next) => {
         return res.status(401).json({
             success: false,
             message: 'Geçersiz veya süresi dolmuş token'
-        });
-    }
-
-    // CORS hatası kontrolü
-    if (err.message === 'CORS policy violation') {
-        return res.status(403).json({
-            success: false,
-            message: 'CORS policy violation'
         });
     }
 
