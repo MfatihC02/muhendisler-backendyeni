@@ -3,7 +3,7 @@ import Joi from 'joi';
 import { Cart } from '../models/cart.model.js';
 import { Address } from '../models/address.model.js';
 import { Stock } from '../models/stock.model.js';
-import StockReservation  from '../models/stockReservation.model.js';
+import StockReservation from '../models/stockReservation.model.js';
 import winston from 'winston';
 
 // Winston logger konfigürasyonu
@@ -29,6 +29,7 @@ const orderItemSchema = Joi.object({
 const createOrderSchema = Joi.object({
     items: Joi.array().items(orderItemSchema).min(1).required(),
     shippingAddressId: Joi.string().hex().length(24).required(),
+    totalAmount: Joi.number().min(0).required(),
     note: Joi.string().max(500).optional()
 });
 
