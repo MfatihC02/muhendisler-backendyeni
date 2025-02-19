@@ -31,6 +31,7 @@ import stockRoutes from './routes/stock.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import contactRoutes from './routes/contact.routes.js';
+import sitemapRoutes from './routes/sitemap.routes.js';
 
 import {
     apiLimiter,
@@ -70,13 +71,13 @@ app.use(cookieParser());
 
 // CORS yapılandırması
 app.use((req, res, next) => {
-    const allowedOrigins = ['https://xn--trmmarket-zub.com.tr', 'https://www.tarimsepetim.com.tr'];
+    const allowedOrigins = ['https://xn--trmmarket-zub.com.tr', 'https://www.tarimsepetim.com.tr', 'http://localhost:5173'];
     const origin = req.headers.origin;
-    
+
     if (allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin);
     }
-    
+
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
@@ -89,7 +90,7 @@ app.use((req, res, next) => {
 
 app.use(cors({
     origin: function (origin, callback) {
-        const allowedOrigins = ['https://xn--trmmarket-zub.com.tr', 'https://www.tarimsepetim.com.tr'];
+        const allowedOrigins = ['https://xn--trmmarket-zub.com.tr', 'https://www.tarimsepetim.com.tr', 'http://localhost:5173'];
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -138,6 +139,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/stocks', stockRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/', sitemapRoutes);
 
 // 404 handler
 app.use((req, res, next) => {
