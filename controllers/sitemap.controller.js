@@ -4,6 +4,14 @@ import mongoose from 'mongoose';
 const Product = mongoose.model('Product');
 
 class SitemapController {
+    constructor() {
+        // bind işlemi ekleyelim
+        this.generateSitemap = this.generateSitemap.bind(this);
+        this.buildCategoryPath = this.buildCategoryPath.bind(this);
+        // Site URL'ini sabit olarak tanımlayalım
+        this.siteUrl = 'https://www.tarimsepetim.com.tr';
+    }
+
     async generateSitemap(req, res) {
         try {
             // Statik URL'ler
@@ -52,7 +60,7 @@ class SitemapController {
                 .select('slug updatedAt ancestors')
                 .lean();
 
-            const categoryUrls = categories.map(category => ({
+            const categoryUrls = categories.map((category) => ({
                 url: `/kategori/${this.buildCategoryPath(category)}`,
                 lastmod: category.updatedAt,
                 changefreq: 'weekly',
@@ -72,7 +80,7 @@ class SitemapController {
             // URL'leri XML'e ekle
             allUrls.forEach(url => {
                 const urlElement = xml.ele('url');
-                urlElement.ele('loc', `${process.env.SITE_URL}${url.url}`);
+                urlElement.ele('loc', `${this.siteUrl}${url.url}`);
                 if (url.lastmod) {
                     urlElement.ele('lastmod', this.formatDate(url.lastmod));
                 }
@@ -94,13 +102,12 @@ class SitemapController {
         }
     }
 
-    // Kategori path'ini oluşturan yardımcı fonksiyon
     buildCategoryPath(category) {
+        if (!category.ancestors) return category.slug;
         const ancestorSlugs = category.ancestors.map(a => a.slug);
         return [...ancestorSlugs, category.slug].join('/');
     }
 
-    // Tarih formatını düzenleyen yardımcı fonksiyon
     formatDate(date) {
         return new Date(date).toISOString().split('T')[0];
     }
